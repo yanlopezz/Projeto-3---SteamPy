@@ -3,16 +3,10 @@ class PilhasRecentes:
         self.dados = []
         self.limite = limite
         
-    def push(self,jogo):
-        indice = 1
-        for i in range(len(self.dados)):
-            if self.dados[i].id == jogo.id:
-                indice = i
-                break
-        
-        if indice != -1:
-            self.dados.pop(0)
-            self.dados.append(jogo)
+    def push(self, jogo):
+        # Remove ocorrências anteriores do mesmo jogo para que ele fique no topo
+        self.dados = [item for item in self.dados if item.id_jogo != jogo.id_jogo]
+        self.dados.append(jogo)
         if len(self.dados) > self.limite:
             self.dados.pop(0)
             
@@ -33,5 +27,9 @@ class PilhasRecentes:
         return len(self.dados)
     
     def mostrar(self):
+        if self.is_empty():
+            print('Nenhum jogo recente.')
+            return
+        print('Jogos recentes (do mais recente ao mais antigo):')
         for i in range(len(self.dados)-1, -1, -1):
             self.dados[i].exibir()
