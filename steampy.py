@@ -344,7 +344,7 @@ def carregar_historico():
             data_sessao = 'carregado'
             sessao = SessaoJogo(jogo_encontrado, tempo_sessao, data_sessao, tempo_total, status)
             historico.append(sessao)
-            tempo_por_jogo[jogo_encontrado.id_jogo] = tempo_total
+            tempo_por_jogo[jogo_encontrado.id_jogo] = max(tempo_por_jogo.get(jogo_encontrado.id_jogo, 0.0), tempo_total)
         print('Histórico carregado.')
     except:
         print('Nenhum histórico salvo encontrado.')
@@ -390,6 +390,174 @@ def mostrar_historico():
         sessao.exibir()
 
 
+def _obter_jogos_jogados():
+    return {sessao.jogo.id_jogo for sessao in historico}
+
+
+def _obter_ids_backlog():
+    return {jogo.id_jogo for jogo in backlog.dados}
+
+
+def recomendar_jogos():
+    if len(historico) == 0:
+        print('Sem histórico suficiente para recomendar jogos.')
+        return []
+
+    genero_tempo = {}
+    console_tempo = {}
+    nota_total = 0.0
+    nota_cont = 0
+    for sessao in historico:
+        genero_tempo[sessao.jogo.genero] = genero_tempo.get(sessao.jogo.genero, 0) + sessao.tempo_jogado
+        console_tempo[sessao.jogo.console] = console_tempo.get(sessao.jogo.console, 0) + sessao.tempo_jogado
+        nota_total += sessao.jogo.critic_score
+        nota_cont += 1
+
+    genero_preferido = max(genero_tempo, key=genero_tempo.get)
+    console_preferido = max(console_tempo, key=console_tempo.get)
+    nota_media = nota_total / nota_cont if nota_cont else 0.0
+
+    jogados = _obter_jogos_jogados()
+    ids_backlog = _obter_ids_backlog()
+    recomendados = []
+
+    for jogo in catalogo:
+        if jogo.id_jogo in jogados or jogo.id_jogo in ids_backlog:
+            continue
+        score = 0
+        if jogo.genero.lower() == genero_preferido.lower():
+            score += 2
+        if jogo.console.lower() == console_preferido.lower():
+            score += 2
+        if jogo.critic_score >= nota_media:
+            score += 1
+        if jogo.total_vendas >= 1.0:
+            score += 1
+        if score > 0:
+            recomendados.append((score, jogo))
+
+    if len(recomendados) == 0:
+        print('Sem recomendações novas no momento.')
+        return []
+
+    recomendados.sort(key=lambda item: (-item[0], -item[1].critic_score, -item[1].total_vendas))
+
+    print('Critérios usados para recomendação:')
+    print(f'- Gênero preferido: {genero_preferido}')
+    print(f'- Console preferido: {console_preferido}')
+    print(f'- Nota média dos jogos jogados: {nota_media:.1f}')
+    print('- Evitando jogos já jogados ou presentes no backlog')
+    print('Sugestões:')
+    for score, jogo in recomendados[:5]:
+        print(f'[{score}]', end=' ')
+        jogo.exibir()
+
+    return [jogo for score, jogo in recomendados[:5]]
+
+
+def gerar_ranking_pessoal():
+    if len(tempo_por_jogo) == 0:
+        print('Nenhum tempo registrado para gerar ranking pessoal.')
+        return
+
+    print('=== Ranking pessoal ===')
+    ranking_jogos = sorted(tempo_por_jogo.items(), key=lambda item: item[1], reverse=True)
+    print('Jogos mais jogados:')
+    for id_jogo, tempo in ranking_jogos[:5]:
+        jogo = indice_jogos.get(id_jogo)
+        if jogo:
+            print(f'- {jogo.titulo}: {tempo:.1f}h')
+
+    genero_tempo = {}
+    console_tempo = {}
+    for id_jogo, tempo in tempo_por_jogo.items():
+        jogo = indice_jogos.get(id_jogo)
+        if jogo:
+            genero_tempo[jogo.genero] = genero_tempo.get(jogo.genero, 0) + tempo
+            console_tempo[jogo.console] = console_tempo.get(jogo.console, 0) + tempo
+
+    if genero_tempo:
+        genero_favorito = max(genero_tempo, key=genero_tempo.get)
+        print(f'Gênero favorito: {genero_favorito} ({genero_tempo[genero_favorito]:.1f}h)')
+    if console_tempo:
+        console_favorito = max(console_tempo, key=console_tempo.get)
+        print(f'Console favorito: {console_favorito} ({console_tempo[console_favorito]:.1f}h)')
+
+    notas_jogados = []
+    for id_jogo in _obter_jogos_jogados():
+        jogo = indice_jogos.get(id_jogo)
+        if jogo:
+            notas_jogados.append((jogo.critic_score, jogo.titulo))
+    if notas_jogados:
+        notas_jogados.sort(reverse=True)
+        print('Top jogos por nota entre os jogados:')
+        for nota, titulo in notas_jogados[:5]:
+            print(f'- {titulo}: {nota}')
+
+
+def exibir_dashboard():
+    total_catalogo = len(catalogo)
+    total_backlog = backlog.tamanho()
+    total_recentes = recentes.tamanho()
+    total_sessoes = len(historico)
+    tempo_total = sum(tempo_por_jogo.values())
+    media_horas = tempo_total / total_sessoes if total_sessoes > 0 else 0.0
+
+    jogo_mais_jogado = None
+    if tempo_por_jogo:
+        id_mais = max(tempo_por_jogo, key=tempo_por_jogo.get)
+        jogo_mais_jogado = indice_jogos.get(id_mais)
+
+    genero_tempo = {}
+    console_tempo = {}
+    for id_jogo, tempo in tempo_por_jogo.items():
+        jogo = indice_jogos.get(id_jogo)
+        if jogo:
+            genero_tempo[jogo.genero] = genero_tempo.get(jogo.genero, 0) + tempo
+            console_tempo[jogo.console] = console_tempo.get(jogo.console, 0) + tempo
+
+    genero_favorito = max(genero_tempo, key=genero_tempo.get) if genero_tempo else 'N/A'
+    console_favorito = max(console_tempo, key=console_tempo.get) if console_tempo else 'N/A'
+
+    nota_media = 0.0
+    if _obter_jogos_jogados():
+        notas = [indice_jogos[id_jogo].critic_score for id_jogo in _obter_jogos_jogados() if indice_jogos.get(id_jogo)]
+        if notas:
+            nota_media = sum(notas) / len(notas)
+
+    total_iniciados = sum(1 for tempo in tempo_por_jogo.values() if tempo > 0)
+    total_em_andamento = sum(1 for tempo in tempo_por_jogo.values() if 2 <= tempo < 10)
+    total_concluidos = sum(1 for tempo in tempo_por_jogo.values() if tempo >= 20)
+
+    jogo_mais_popular = None
+    jogo_melhor_nota = None
+    jogados = _obter_jogos_jogados()
+    if jogados:
+        jogos_jogados = [indice_jogos[id_jogo] for id_jogo in jogados if id_jogo in indice_jogos]
+        if jogos_jogados:
+            jogo_mais_popular = max(jogos_jogados, key=lambda j: j.total_vendas)
+            jogo_melhor_nota = max(jogos_jogados, key=lambda j: j.critic_score)
+
+    print('=== DASHBOARD ===')
+    print(f'Total de jogos no catálogo: {total_catalogo}')
+    print(f'Total de jogos no backlog: {total_backlog}')
+    print(f'Total de jogos recentes: {total_recentes}')
+    print(f'Total de sessões jogadas: {total_sessoes}')
+    print(f'Tempo total jogado: {tempo_total:.1f}h')
+    if jogo_mais_jogado:
+        print(f'Jogo mais jogado: {jogo_mais_jogado.titulo} ({tempo_por_jogo[jogo_mais_jogado.id_jogo]:.1f}h)')
+    print(f'Gênero favorito: {genero_favorito}')
+    print(f'Console favorito: {console_favorito}')
+    print(f'Nota média dos jogos jogados: {nota_media:.1f}')
+    print(f'Total de jogos já iniciados: {total_iniciados}')
+    print(f'Total de jogos concluídos simbolicamente: {total_concluidos}')
+    print(f'Média de horas por sessão: {media_horas:.1f}h')
+    if jogo_mais_popular:
+        print(f'Jogo mais popular já jogado: {jogo_mais_popular.titulo} ({jogo_mais_popular.total_vendas}M vendas)')
+    if jogo_melhor_nota:
+        print(f'Jogo com melhor nota já jogado: {jogo_melhor_nota.titulo} ({jogo_melhor_nota.critic_score})')
+
+
 def _buscar_jogo_por_id(id_jogo):
     if id_jogo in indice_jogos:
         return indice_jogos[id_jogo]
@@ -420,8 +588,11 @@ def menu():
         print('14. Retomar último jogo')
         print('15. Registrar tempo de jogo')
         print('16. Ver histórico completo')
-        print('17. Salvar backlog')
-        print('18. Sair')
+        print('17. Ver recomendações')
+        print('18. Ver ranking pessoal')
+        print('19. Ver dashboard')
+        print('20. Salvar backlog')
+        print('21. Sair')
         print('===================')
 
         opcao = input('Escolha uma opção: ')
@@ -511,9 +682,18 @@ def menu():
             mostrar_historico()
 
         elif opcao == '17':
-            salvar_backlog()
+            recomendar_jogos()
 
         elif opcao == '18':
+            gerar_ranking_pessoal()
+
+        elif opcao == '19':
+            exibir_dashboard()
+
+        elif opcao == '20':
+            salvar_backlog()
+
+        elif opcao == '21':
             salvar_backlog()
             salvar_historico()
             salvar_recentes()
